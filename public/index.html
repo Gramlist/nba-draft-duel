@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NBA Draft Duel</title>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/teams.js"></script>
+<script src="/players.js"></script>
+<style>
+:root{--bg:#080808;--panel:#111;--panel2:#171717;--line:#2b2b2b;--fg:#f5f5f5;--muted:#8d8d8d;--accent:#fff;--team:#666}
+*{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 50% -10%,#222 0,#0b0b0b 35%,#060606 80%);color:var(--fg);font-family:Inter,system-ui,-apple-system,"PingFang SC","Microsoft Yahei",sans-serif;min-height:100vh}
+button,input{font:inherit}button{cursor:pointer} .wrap{max-width:980px;margin:auto;padding:18px 14px 36px}
+.brand{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.logoText{font-weight:900;letter-spacing:.08em}.badge{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--muted)}
+.panel{background:rgba(17,17,17,.92);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 16px 40px #0007}
+.hero{padding:26px 18px;text-align:center}.hero h1{font-size:32px;margin:6px 0 8px;letter-spacing:.04em}.hero p{color:var(--muted);margin:0 0 18px}.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.btn{border:0;border-radius:12px;padding:13px 16px;font-weight:800;background:#f5f5f5;color:#080808}.btn.secondary{background:#1c1c1c;color:#eee;border:1px solid #333}.btn:disabled{opacity:.38;cursor:not-allowed}
+.inp{width:100%;background:#0b0b0b;color:#fff;border:1px solid #333;border-radius:12px;padding:14px;outline:none}.inp:focus{border-color:#666}
+.roomcode{font-size:44px;font-weight:900;letter-spacing:.16em;margin:10px 0}.muted{color:var(--muted)}.hidden{display:none!important}
+.turn{margin:12px 0;text-align:center;font-weight:900;letter-spacing:.12em;font-size:14px}.boards{display:grid;grid-template-columns:1fr;gap:12px}
+.lineupTitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.slots{display:grid;gap:8px}.slot{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:10px;background:#0c0c0c;border:1px solid #242424;border-radius:12px;padding:10px}
+.pos{font-weight:900;color:#aaa}.pname{font-weight:800}.season{font-size:12px;color:#777}.ovr{font-size:18px;font-weight:900}.activeBoard{border-color:var(--team);box-shadow:0 0 0 1px var(--team) inset}
+.center{margin:12px 0}.roulette{text-align:center;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+.teamlogo{width:112px;height:112px;object-fit:contain;filter:drop-shadow(0 12px 24px #0008);transition:.25s}.teamname{font-weight:900;font-size:22px;margin-top:10px}.rollStrip{display:flex;gap:16px;align-items:center;justify-content:center;filter:blur(.2px)}
+.searchbox{margin-top:14px}.searchLive{text-align:center;color:#aaa;font-size:13px;margin-top:7px;min-height:20px}
+.results{display:grid;gap:9px;margin-top:10px}.card{border:1px solid #2a2a2a;background:#0b0b0b;border-radius:14px;padding:12px}.cardtop{display:flex;justify-content:space-between;gap:10px}.attrs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;font-size:11px}.attrs span{background:#151515;border-radius:8px;padding:6px;text-align:center;color:#bbb}.posBtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.miniBtn{border:1px solid #333;background:#171717;color:#fff;border-radius:9px;padding:8px 10px;font-weight:800}
+.resultHead{text-align:center;padding:18px}.score{font-size:46px;font-weight:950;letter-spacing:.03em}.quarters{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:10px}.q{background:#0b0b0b;border-radius:10px;padding:9px;text-align:center}.pbp{max-height:240px;overflow:auto;margin-top:12px;border-top:1px solid #222}.play{padding:9px 0;border-bottom:1px solid #1d1d1d;color:#bbb;font-size:13px}
+@media(min-width:760px){.boards{grid-template-columns:1fr 1fr}.center{grid-column:1/-1}.hero h1{font-size:42px}}
+</style></head>
+<body><div class="wrap">
+<div class="brand"><div class="logoText">NBA DRAFT DUEL</div><div class="badge" id="net">● OFFLINE</div></div>
+<section id="home" class="panel hero">
+  <div class="muted">HISTORICAL 5V5 DRAFT</div><h1>随机球队 · 历史球员 · 双人对战</h1>
+  <p>两台手机打开同一个网址，一台创建房间，另一台输入4位房间码。</p>
+  <div class="row"><button class="btn" id="createBtn">创建房间</button><button class="btn secondary" id="showJoin">加入房间</button></div>
+  <div id="joinBox" class="hidden" style="max-width:320px;margin:14px auto 0">
+    <input id="roomInput" class="inp" inputmode="numeric" maxlength="4" placeholder="输入4位房间码">
+    <button class="btn" id="joinBtn" style="margin-top:8px;width:100%">加入</button>
+  </div>
+</section>
+<section id="lobby" class="panel hero hidden">
+  <div class="muted">ROOM CODE</div><div id="roomCode" class="roomcode">----</div>
+  <div id="lobbyText" class="muted">等待 PLAYER 2 加入…</div>
+</section>
+<section id="game" class="hidden">
+  <div class="turn" id="turnText">PLAYER 1 TURN</div>
+  <div class="boards">
+    <div id="board1" class="panel"></div>
+    <div id="board2" class="panel"></div>
+    <div class="panel center">
+      <div class="roulette">
+        <div id="rouletteIdle"><div class="muted">RANDOM NBA TEAM</div><div style="font-size:58px;margin:14px">◉</div><button id="rollBtn" class="btn">ROLL TEAM</button></div>
+        <div id="rolling" class="hidden"><div class="rollStrip" id="rollStrip"></div><div class="muted" style="margin-top:12px">随机抽取中…</div></div>
+        <div id="teamPicked" class="hidden"><img id="teamLogo" class="teamlogo"><div id="teamName" class="teamname"></div><div id="teamZh" class="muted"></div></div>
+      </div>
+      <div id="searchArea" class="searchbox hidden">
+        <input id="searchInput" class="inp" placeholder="输入球员中文名 / 英文名，例如：科沃尔">
+        <div id="searchLive" class="searchLive"></div>
+        <div id="results" class="results"></div>
+      </div>
+      <div id="readyArea" class="hidden" style="text-align:center;margin-top:12px"><button id="simulateBtn" class="btn">SIMULATE GAME</button></div>
+    </div>
+  </div>
+</section>
+<section id="result" class="panel hidden"></section>
+<div id="toast" class="hidden" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#fff;color:#000;padding:10px 14px;border-radius:10px;font-weight:800;z-index:9"></div>
+</div>
+<script>
+const socket=io();
+let me=null, code=null, state=null;
+const $=id=>document.getElementById(id);
+const teamMap=Object.fromEntries(TEAMS.map(t=>[t.id,t]));
+const normalize=s=>String(s||"").toLowerCase().replace(/[·.\s\-_'’]/g,"");
+function toast(s){let t=$("toast");t.textContent=s;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),1800)}
+socket.on("connect",()=>{$("net").textContent="● ONLINE";$("net").style.color="#79d48b"});
+socket.on("disconnect",()=>{$("net").textContent="● OFFLINE";$("net").style.color=""});
+socket.on("error_message",toast);
+$("showJoin").onclick=()=>$("joinBox").classList.toggle("hidden");
+$("createBtn").onclick=()=>socket.emit("create_room");
+$("joinBtn").onclick=()=>socket.emit("join_room",{code:$("roomInput").value});
+socket.on("room_created",d=>{me=d.player;code=d.code;$("home").classList.add("hidden");$("lobby").classList.remove("hidden");$("roomCode").textContent=code});
+socket.on("room_joined",d=>{me=d.player;code=d.code;$("home").classList.add("hidden");$("lobby").classList.remove("hidden");$("roomCode").textContent=code});
+socket.on("room_state",s=>{state=s;render()});
+socket.on("search_updated",d=>{ if(d.player!==me) $("searchLive").textContent=`对方正在输入：${d.text||"…"}`; });
+function render(){
+ if(!state)return;
+ if(state.phase==="lobby"){ $("lobbyText").textContent="等待 PLAYER 2 加入…"; return; }
+ $("lobby").classList.add("hidden");$("home").classList.add("hidden");
+ if(state.phase==="result"){renderResult();return}
+ $("game").classList.remove("hidden");$("result").classList.add("hidden");
+ $("turnText").textContent=(state.currentTurn==="p1"?"PLAYER 1":"PLAYER 2")+" TURN";
+ document.documentElement.style.setProperty("--team", state.currentTeam?teamMap[state.currentTeam].color:"#666");
+ renderBoard("board1","p1");renderBoard("board2","p2");
+ $("board1").classList.toggle("activeBoard",state.currentTurn==="p1");
+ $("board2").classList.toggle("activeBoard",state.currentTurn==="p2");
+ const mine=state.currentTurn===me;
+ $("rouletteIdle").classList.toggle("hidden",state.phase!=="draft");
+ $("rolling").classList.toggle("hidden",state.phase!=="rolling");
+ $("teamPicked").classList.toggle("hidden",!["selecting"].includes(state.phase));
+ $("searchArea").classList.toggle("hidden",state.phase!=="selecting");
+ $("readyArea").classList.toggle("hidden",state.phase!=="ready");
+ $("rollBtn").disabled=!mine;
+ if(state.phase==="rolling") animateStrip();
+ if(state.currentTeam){
+   const t=teamMap[state.currentTeam];$("teamLogo").src=t.logo;$("teamName").textContent=t.nameEn;$("teamZh").textContent=t.nameZh;
+ }
+ if(state.phase==="selecting"){
+   $("searchInput").disabled=!mine;
+   if(!mine){$("searchInput").value="";$("results").innerHTML=""}
+ }
+ $("simulateBtn").disabled=me!=="p1";
+}
+function renderBoard(id,p){
+ const lu=state.players[p].lineup; const label=p==="p1"?"PLAYER 1":"PLAYER 2";
+ $(id).innerHTML=`<div class="lineupTitle"><b>${label}</b><span class="muted">${state.players[p].connected?"CONNECTED":"OFFLINE"}</span></div><div class="slots">${["PG","SG","SF","PF","C"].map(pos=>{const x=lu[pos];return `<div class="slot"><div class="pos">${pos}</div><div>${x?`<div class="pname">${x.nameZh}</div><div class="season">${teamMap[x.teamId].nameZh} · ${x.peakSeason}</div>`:`<span class="muted">EMPTY</span>`}</div><div class="ovr">${x?x.overall:"—"}</div></div>`}).join("")}</div>`;
+}
+$("rollBtn").onclick=()=>socket.emit("roll_team",{code});
+let stripTimer=null;
+function animateStrip(){
+ clearInterval(stripTimer);
+ let i=0; const el=$("rollStrip");
+ stripTimer=setInterval(()=>{ if(!state||state.phase!=="rolling"){clearInterval(stripTimer);return}
+ const arr=[0,1,2].map(k=>TEAMS[(i+k*7)%TEAMS.length]);el.innerHTML=arr.map(t=>`<img src="${t.logo}" style="width:64px;height:64px;object-fit:contain">`).join("");i++;
+ },80);
+}
+$("searchInput").addEventListener("input",e=>{
+ if(!state||state.currentTurn!==me)return;
+ socket.emit("search_text",{code,text:e.target.value});
+ renderSearch(e.target.value);
+});
+function matchesCard(c,q){
+ q=normalize(q); if(!q)return false;
+ const names=[c.nameEn,c.nameZh,...c.aliases].map(normalize);
+ return names.some(n=>n.includes(q)||q.includes(n));
+}
+function renderSearch(q){
+ const team=state.currentTeam;
+ const items=PLAYER_CARDS.filter(c=>c.teamId===team && matchesCard(c,q)).slice(0,6);
+ const drafted=new Set(state.draftedPlayerIds);
+ $("results").innerHTML=items.map(c=>{
+   const locked=drafted.has(c.playerId);
+   return `<div class="card"><div class="cardtop"><div><b>${c.nameZh}</b><div class="muted">${c.nameEn} · ${c.peakSeason}</div></div><div class="ovr">${c.overall}</div></div>
+   <div class="attrs"><span>FIN ${c.finishing}</span><span>MID ${c.midRange}</span><span>3PT ${c.threePoint}</span><span>PLAY ${c.playmaking}</span><span>DEF ${Math.round((c.perimeterDefense+c.interiorDefense)/2)}</span></div>
+   <div class="posBtns">${locked?`<span class="muted">ALREADY DRAFTED</span>`:c.eligiblePositions.map(p=>`<button class="miniBtn" onclick='pick(${JSON.stringify(JSON.stringify(c))},"${p}")'>ADD ${p}</button>`).join("")}</div></div>`;
+ }).join("") || (q?`<div class="muted" style="text-align:center;padding:10px">没有找到该队球员。可继续输入其他名字。</div>`:"");
+}
+window.pick=(raw,pos)=>{
+ const c=JSON.parse(raw);
+ socket.emit("draft_player",{code,playerCard:c,position:pos});
+ $("searchInput").value="";$("results").innerHTML="";
+};
+$("simulateBtn").onclick=()=>{
+ if(me!=="p1")return;
+ const r=simulate(state.players.p1.lineup,state.players.p2.lineup);
+ socket.emit("start_simulation",{code,result:r});
+}
+function teamMetrics(lu){
+ const a=Object.values(lu);
+ const avg=k=>a.reduce((s,x)=>s+x[k],0)/a.length;
+ const off=.18*avg("finishing")+.16*avg("midRange")+.20*avg("threePoint")+.20*avg("playmaking")+.16*avg("efficiency")+.10*avg("athleticism");
+ const def=.40*avg("perimeterDefense")+.35*avg("interiorDefense")+.15*avg("rebounding")+.10*avg("athleticism");
+ const shooting=.55*avg("threePoint")+.45*avg("midRange");
+ const play=avg("playmaking"), reb=avg("rebounding"), ath=avg("athleticism");
+ const usages=a.map(x=>x.usage).sort((x,y)=>y-x);
+ let chemistry=90;
+ if(usages[0]>92&&usages[1]>90&&usages[2]>86) chemistry-=7;
+ chemistry += (a.filter(x=>x.threePoint>=88).length>=3?4:0);
+ chemistry += (lu.PF.threePoint<65&&lu.C.threePoint<55?-5:0);
+ chemistry += (a.some(x=>x.playmaking>=95)?3:0);
+ chemistry += ((avg("perimeterDefense")>90&&avg("interiorDefense")>88)?4:0);
+ chemistry=Math.max(72,Math.min(99,chemistry));
+ return {offense:off,defense:def,shooting,playmaking:play,rebounding:reb,athleticism:ath,chemistry};
+}
+function matchup(a,b){
+ const ps=["PG","SG","SF","PF","C"]; let x=0;
+ ps.forEach(p=>{const A=a[p],B=b[p];x += ((A.finishing+A.midRange+A.threePoint+A.playmaking)/4 - (B.perimeterDefense+B.interiorDefense)/2)*.025});
+ return x;
+}
+function simulate(a,b){
+ const ma=teamMetrics(a),mb=teamMetrics(b);
+ const sa=(ma.offense+ma.defense+ma.chemistry)/3 + matchup(a,b);
+ const sb=(mb.offense+mb.defense+mb.chemistry)/3 + matchup(b,a);
+ const noiseA=(Math.random()*2-1)*8.5, noiseB=(Math.random()*2-1)*8.5;
+ const base=103+Math.random()*14;
+ let ta=Math.round(base+(sa-sb)*.62+noiseA), tb=Math.round(base+(sb-sa)*.62+noiseB);
+ ta=Math.max(90,Math.min(135,ta));tb=Math.max(90,Math.min(135,tb)); if(ta===tb) ta++;
+ function qs(total){let q=[0,0,0,0],left=total;for(let i=0;i<3;i++){q[i]=Math.max(18,Math.round(total/4+(Math.random()*8-4)));left-=q[i]}q[3]=left;return q}
+ const qa=qs(ta),qb=qs(tb);
+ const plays=[];
+ const stars=[...Object.values(a),...Object.values(b)].sort((x,y)=>y.overall-x.overall).slice(0,6);
+ const templates=["命中关键三分","突破完成终结","中距离稳稳命中","送出精彩助攻","完成强硬防守","抢下关键篮板"];
+ for(let i=0;i<18;i++){let s=stars[Math.floor(Math.random()*stars.length)];plays.push(`${s.nameZh} ${templates[Math.floor(Math.random()*templates.length)]}`)}
+ function box(lu,teamScore){
+   const arr=Object.values(lu), us=arr.map(x=>x.usage), sum=us.reduce((a,b)=>a+b,0);
+   return arr.map(x=>{let pts=Math.max(6,Math.round(teamScore*(x.usage/sum)*(0.86+Math.random()*.28)));return {name:x.nameZh,pts,reb:Math.max(1,Math.round(x.rebounding/12+Math.random()*4)),ast:Math.max(1,Math.round(x.playmaking/16+Math.random()*4)),stl:Math.max(0,Math.round(x.perimeterDefense/48+Math.random())),blk:Math.max(0,Math.round(x.interiorDefense/48+Math.random()))}})
+ }
+ const ba=box(a,ta),bb=box(b,tb); const all=[...ba,...bb].sort((x,y)=>y.pts-x.pts);
+ return {score1:ta,score2:tb,q1:qa,q2:qb,metrics1:ma,metrics2:mb,plays,box1:ba,box2:bb,potg:all[0]};
+}
+function renderResult(){
+ $("game").classList.add("hidden");$("lobby").classList.add("hidden");$("result").classList.remove("hidden");
+ const r=state.result; if(!r)return;
+ $("result").innerHTML=`<div class="resultHead"><div class="muted">FINAL</div><div class="score">${r.score1} <span class="muted">:</span> ${r.score2}</div><div style="font-weight:900;margin-top:8px">${r.score1>r.score2?"PLAYER 1 WIN":"PLAYER 2 WIN"}</div></div>
+ <div class="quarters">${[0,1,2,3].map(i=>`<div class="q"><b>Q${i+1}</b><div>${r.q1[i]} : ${r.q2[i]}</div></div>`).join("")}</div>
+ <div class="card" style="margin-top:12px;text-align:center"><div class="muted">PLAYER OF THE GAME</div><h2>${r.potg.name}</h2><div>${r.potg.pts} PTS · ${r.potg.reb} REB · ${r.potg.ast} AST</div></div>
+ <div class="pbp">${r.plays.map(x=>`<div class="play">${x}</div>`).join("")}</div>
+ ${me==="p1"?`<div style="text-align:center;margin-top:14px"><button class="btn" onclick="socket.emit('new_game',{code})">NEW GAME</button></div>`:""}`;
+}
+</script></body></html>
