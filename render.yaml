@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: nba-draft-duel
-    env: node
+    name: football-draft-duel
+    runtime: docker
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
     healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production

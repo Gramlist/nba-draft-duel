@@ -1,8 +1,10 @@
-FROM node:20-alpine
+FROM node:24-bookworm-slim
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 COPY . .
-ENV PORT=3000
-EXPOSE 3000
+RUN npm run build
+ENV NODE_ENV=production
+ENV PORT=10000
+EXPOSE 10000
 CMD ["npm","start"]
