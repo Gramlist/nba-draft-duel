@@ -21,6 +21,22 @@ export async function POST(req:Request){try{
  if(token&&saved.tokens.includes(token))return response({...view(saved,token),token});
  if(saved.state.teams.length>=2)throw Error('这个房间已经满员');saved.state.teams.push(team(String(body.name||''),body.club,body.formation));token=crypto.randomUUID();saved.tokens.push(token);saved.state.phase='draft';saved.state.turn=crypto.getRandomValues(new Uint32Array(1))[0]%2;
  }else {const {side}=view(saved,token);if(body.action==='poll')return response(view(saved,token));if(body.action==='lookup'){player=resolveTyped(saved.state,side,String(body.name||''));saved.state.previews??=[null,null];saved.state.previews[side]=player.id;}else{if(body.action==='pick')body.id=resolveTyped(saved.state,side,String(body.name||'')).id;act(saved.state,side,body.action,body);}}
- const r=await db.prepare('UPDATE rooms SET state=?,version=version+1,expires=? WHERE code=? AND version=?').bind(JSON.stringify(saved),ttl,code,row.version).run();if(!r.meta.changes)return response({error:'对手刚刚更新了房间，请重试'},409);
+ const r=await db.prepare('UPDATE rooms SET state=?,version=version+1,expires=? WHERE code=? AND version=?').bind(JSON.stringify(saved),ttl,code,row.version).run();
+ if(!r.meta.changes){
+  // Both players may press "ready" within the same polling interval. Re-read
+  // the newest state and apply only this player's still-pending ready action.
+  if(body.action==='ready'){
+   for(let attempt=0;attempt<4;attempt++){
+    const latest=await db.prepare('SELECT state,version FROM rooms WHERE code=? AND expires>?').bind(code,Date.now()).first<{state:string;version:number}>();
+    if(!latest)return response({error:'房间不存在或已过期'},404);
+    const fresh:Saved=JSON.parse(latest.state);const current=view(fresh,token);
+    if(fresh.state.phase==='finished'||fresh.state.teams[current.side]?.ready)return response(current);
+    act(fresh.state,current.side,'ready');
+    const retry=await db.prepare('UPDATE rooms SET state=?,version=version+1,expires=? WHERE code=? AND version=?').bind(JSON.stringify(fresh),Date.now()+24*60*60*1000,code,latest.version).run();
+    if(retry.meta.changes)return response(view(fresh,token));
+   }
+  }
+  return response({error:'对手刚刚更新了房间，请重试'},409);
+ }
  return response({...view(saved,token),...(player?{player}:{}),...(body.action==='join'?{token}:{})});
  }catch(e){return response({error:e instanceof Error?e.message:'请求失败，请稍后重试'},400);}}
