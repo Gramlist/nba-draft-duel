@@ -26,15 +26,15 @@ function adapted(p:Player,position:string):Player{
 export function available(s:State,side:number,nation?:string){const t=s.teams[side];const used=new Set(s.teams.flatMap(t=>t.lineup));return PLAYERS.filter(p=>(!nation||p.nation===nation)&&!used.has(p.id)&&FORMATIONS[t.formation].some((_,i)=>!t.lineup[i]));}
 export function draw(s:State,side:number,random=Math.random){let pool=NATIONS.filter(n=>available(s,side,n.id).length&&n.id!==s.nation);if(!pool.length)pool=NATIONS.filter(n=>available(s,side,n.id).length);if(!pool.length)throw Error('没有可用球员，请调整阵型');return pool[Math.floor(random()*pool.length)].id;}
 export function reassign(ids:string[],formation:string):(string|null)[]|null {if(!FORMATIONS[formation])return null;const result:(string|null)[]=Array(11).fill(null);ids.slice(0,11).forEach((id,i)=>result[i]=id);return result;}
-export function power(t:Team){const rows=FORMATIONS[t.formation];const avg=(positions:string[])=>{const ps=t.lineup.map((id,i)=>id&&positions.includes(rows[i])?effectiveRating(byId(id),rows[i]):null).filter((x):x is number=>x!==null);return ps.reduce((a,b)=>a+b,0)/(ps.length||1);};return {attack:avg(['LW','RW','ST','AM']),mid:avg(['DM','CM','AM']),def:avg(['LB','RB','CB']),gk:avg(['GK']),all:avg(rows)};}
+export function power(t:Team){const rows=FORMATIONS[t.formation];const avg=(positions:string[])=>{const ps=t.lineup.map((id,i)=>id&&positions.includes(rows[i])?effectiveRating(byId(id),rows[i]):null).filter((x):x is number=>x!==null);return ps.reduce((a,b)=>a+b,0)/(ps.length||1);};return {attack:avg(['LW','RW','ST','AM','LM','RM']),mid:avg(['DM','CM','AM','LM','RM']),def:avg(['LB','RB','LWB','RWB','LCB','CB','RCB']),gk:avg(['GK']),all:avg(rows)};}
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const round=(v:number)=>Math.round(v*100)/100;
 const mean=(ps:Player[],key:keyof Attributes)=>ps.reduce((a,p)=>a+p.attributes[key],0)/Math.max(1,ps.length);
 function playersAt(t:Team,positions:string[]){return t.lineup.flatMap((id,i)=>{const pos=FORMATIONS[t.formation][i];return id&&positions.includes(pos)?[adapted(byId(id),pos)]:[];});}
 const any=(ps:Player[],random:()=>number)=>ps[Math.floor(random()*ps.length)];
 function weighted<T>(items:T[],weights:number[],random:()=>number):T{let r=random()*weights.reduce((a,b)=>a+b,0);for(let i=0;i<items.length;i++){r-=weights[i];if(r<0)return items[i];}return items[items.length-1];}
-function midfield(t:Team){const ps=playersAt(t,['CM','DM','AM']);return mean(ps,'passing')*.65+mean(ps,'dribbling')*.25+mean(ps,'physical')*.1;}
-function profiles(t:Team){const m=playersAt(t,['CM','DM','AM']),d=playersAt(t,['CB','LB','RB']),w=playersAt(t,['LW','RW']),f=playersAt(t,['ST','LW','RW','AM']),g=playersAt(t,['GK']);const best=(ps:Player[],key:keyof Attributes)=>[...ps].sort((a,b)=>b.attributes[key]-a.attributes[key])[0];return [
+function midfield(t:Team){const ps=playersAt(t,['CM','DM','AM','LM','RM']);return mean(ps,'passing')*.65+mean(ps,'dribbling')*.25+mean(ps,'physical')*.1;}
+function profiles(t:Team){const m=playersAt(t,['CM','DM','AM','LM','RM']),d=playersAt(t,['CB','LCB','RCB','LB','RB','LWB','RWB']),w=playersAt(t,['LW','RW','LM','RM']),f=playersAt(t,['ST','LW','RW','AM','LM','RM']),g=playersAt(t,['GK']);const best=(ps:Player[],key:keyof Attributes)=>[...ps].sort((a,b)=>b.attributes[key]-a.attributes[key])[0];return [
  {key:'passing',title:'组织',score:midfield(t),p:best(m,'passing'),detail:'中场传控为机会创造提供支援'},
  {key:'width',title:'边路',score:mean(w,'pace')*.45+mean(w,'dribbling')*.55,p:best(w,'dribbling'),detail:'边路速度与盘带能争取突破空间'},
  {key:'finish',title:'终结',score:mean(f,'finishing'),p:best(f,'finishing'),detail:'前场终结能力是把握机会的基础'},
