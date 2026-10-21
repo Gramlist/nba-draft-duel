@@ -95,6 +95,7 @@ export function act(s:State,side:number,action:string,payload:any={},random=Math
  const t=s.teams[side];if(!t)throw Error('你不在这个房间');
  if(action==='formation'){if(!['waiting','draft','ready'].includes(s.phase))throw Error('比赛已结束');if(!FORMATIONS[payload.formation])throw Error('无效阵型');const r=reassign(t.lineup.filter((x):x is string=>!!x),payload.formation);if(!r)throw Error('已有球员无法全部适配此阵型');t.formation=payload.formation;t.lineup=r;if(s.previews)s.previews[side]=null;t.ready=false;if(s.nation&&s.turn===side&&!available(s,side,s.nation).length)s.nation=null;return;}
  if(action==='tactic'){if(!['waiting','draft','ready'].includes(s.phase)||!tactics.includes(payload.tactic))throw Error('无法修改战术');t.tactic=payload.tactic;t.ready=false;return;}
+ if(action==='move'){if(!['waiting','draft','ready'].includes(s.phase))throw Error('比赛已结束，无法调整位置');const from=payload.from,to=payload.to;if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||from>10||to<0||to>10||from===to||!t.lineup[from])throw Error('请选择有效的球员和目标位置');const player=t.lineup[from];t.lineup[from]=t.lineup[to]||null;t.lineup[to]=player;if(s.previews)s.previews[side]=null;t.ready=false;return;}
  if(action==='ready'){if(s.phase!=='ready')throw Error('请先选满阵容');t.ready=!t.ready;if(s.teams.every(t=>t.ready)){s.result=simulate(s,random);s.phase='finished';}return;}
  if(s.phase!=='draft'||s.turn!==side)throw Error('请等待你的选人回合');
  if(action==='draw'){if(s.nation)throw Error('本回合已经抽取国家');s.nation=draw(s,side,random);return;}
