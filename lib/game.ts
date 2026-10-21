@@ -9,6 +9,8 @@ export const tactics=['均衡推进','控球组织','快速反击'];
 export function team(name:string,club:string,formation:string):Team {if(!CLUBS.some(c=>c.id===club)||!FORMATIONS[formation])throw Error('请选择有效的俱乐部和阵型');return {name:(name.trim()||CLUBS.find(c=>c.id===club)!.name).slice(0,20),club,formation,lineup:Array(11).fill(null),rerolls:2,ready:false,tactic:tactics[0]};}
 export function positionPenalty(p:Player,position:string){
  if(p.positions.includes(position))return 0;
+ const related:Record<string,string[]>={CB:['LCB','RCB'],LCB:['CB','RCB'],RCB:['CB','LCB'],LB:['LWB'],LWB:['LB'],RB:['RWB'],RWB:['RB'],LW:['LM'],LM:['LW'],RW:['RM'],RM:['RW'],CM:['DM','AM'],DM:['CM'],AM:['CM']};
+ if((related[p.primaryPosition]||[]).includes(position))return 2;
  const group=(x:string)=>x==='GK'?'GK':['LB','RB','LWB','RWB','LCB','CB','RCB'].includes(x)?'D':['DM','CM','AM','LM','RM'].includes(x)?'M':['LW','RW','ST'].includes(x)?'F':'M';
  const from=group(p.primaryPosition),to=group(position);
  if(from==='GK'||to==='GK')return 35;
