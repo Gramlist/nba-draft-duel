@@ -30,7 +30,7 @@ export async function POST(req:Request){try{
     const latest=await db.prepare('SELECT state,version FROM rooms WHERE code=? AND expires>?').bind(code,Date.now()).first<{state:string;version:number}>();
     if(!latest)return response({error:'房间不存在或已过期'},404);
     const fresh:Saved=JSON.parse(latest.state);const current=view(fresh,token);
-    if(fresh.state.phase==='finished'||fresh.state.teams[current.side]?.ready)return response(current);
+    if(fresh.state.phase!=='ready'||fresh.state.teams[current.side]?.ready)return response(current);
     act(fresh.state,current.side,'ready');
     const retry=await db.prepare('UPDATE rooms SET state=?,version=version+1,expires=? WHERE code=? AND version=?').bind(JSON.stringify(fresh),Date.now()+24*60*60*1000,code,latest.version).run();
     if(retry.meta.changes)return response(view(fresh,token));
