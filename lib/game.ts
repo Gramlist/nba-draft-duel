@@ -7,14 +7,28 @@ export type Result={score:number[];events:Event[];shots:number[];possession:numb
 export type State={rulesVersion:2;code:string;phase:'waiting'|'draft'|'ready'|'finished';teams:Team[];turn:number;nation:string|null;history:{side:number;id:string}[];previews?:(string|null)[];result?:Result};
 export const tactics=['均衡推进','控球组织','快速反击'];
 export function team(name:string,club:string,formation:string):Team {if(!CLUBS.some(c=>c.id===club)||!FORMATIONS[formation])throw Error('请选择有效的俱乐部和阵型');return {name:(name.trim()||CLUBS.find(c=>c.id===club)!.name).slice(0,20),club,formation,lineup:Array(11).fill(null),rerolls:2,ready:false,tactic:tactics[0]};}
-export function available(s:State,side:number,nation?:string){const t=s.teams[side];const used=new Set(s.teams.flatMap(t=>t.lineup));return PLAYERS.filter(p=>(!nation||p.nation===nation)&&!used.has(p.id)&&FORMATIONS[t.formation].some((pos,i)=>!t.lineup[i]&&p.positions.includes(pos)));}
+export function positionPenalty(p:Player,position:string){
+ if(p.positions.includes(position))return 0;
+ const group=(x:string)=>x==='GK'?'GK':['LB','RB','LWB','RWB','LCB','CB','RCB'].includes(x)?'D':['DM','CM','AM','LM','RM'].includes(x)?'M':['LW','RW','ST'].includes(x)?'F':'M';
+ const from=group(p.primaryPosition),to=group(position);
+ if(from==='GK'||to==='GK')return 35;
+ if(from===to)return 5;
+ if((from==='D'&&to==='M')||(from==='M'&&to==='D')||(from==='M'&&to==='F')||(from==='F'&&to==='M'))return 12;
+ return 22;
+}
+export function effectiveRating(p:Player,position:string){return Math.max(25,p.rating-positionPenalty(p,position));}
+function adapted(p:Player,position:string):Player{
+ const penalty=positionPenalty(p,position),factor=1-penalty/100;
+ return {...p,rating:effectiveRating(p,position),attributes:Object.fromEntries(Object.entries(p.attributes).map(([k,v])=>[k,k==='saving'&&position!=='GK'?Math.max(5,v*.25):Math.round(v*factor)])) as Attributes};
+}
+export function available(s:State,side:number,nation?:string){const t=s.teams[side];const used=new Set(s.teams.flatMap(t=>t.lineup));return PLAYERS.filter(p=>(!nation||p.nation===nation)&&!used.has(p.id)&&FORMATIONS[t.formation].some((_,i)=>!t.lineup[i]));}
 export function draw(s:State,side:number,random=Math.random){let pool=NATIONS.filter(n=>available(s,side,n.id).length&&n.id!==s.nation);if(!pool.length)pool=NATIONS.filter(n=>available(s,side,n.id).length);if(!pool.length)throw Error('没有可用球员，请调整阵型');return pool[Math.floor(random()*pool.length)].id;}
-export function reassign(ids:string[],formation:string):(string|null)[]|null {const slots=FORMATIONS[formation];if(!slots)return null;const result:(string|null)[]=Array(11).fill(null);const sorted=[...ids].sort((a,b)=>byId(a).positions.length-byId(b).positions.length);function fit(n:number):boolean{if(n===sorted.length)return true;const p=byId(sorted[n]);for(let i=0;i<11;i++)if(!result[i]&&p.positions.includes(slots[i])){result[i]=p.id;if(fit(n+1))return true;result[i]=null;}return false;}return fit(0)?result:null;}
-export function power(t:Team){const rows=FORMATIONS[t.formation];const avg=(positions:string[])=>{const ps=t.lineup.map((id,i)=>id&&positions.includes(rows[i])?byId(id).rating:null).filter((x):x is number=>x!==null);return ps.reduce((a,b)=>a+b,0)/(ps.length||1);};return {attack:avg(['LW','RW','ST','AM']),mid:avg(['DM','CM','AM']),def:avg(['LB','RB','CB']),gk:avg(['GK']),all:avg(rows)};}
+export function reassign(ids:string[],formation:string):(string|null)[]|null {if(!FORMATIONS[formation])return null;const result:(string|null)[]=Array(11).fill(null);ids.slice(0,11).forEach((id,i)=>result[i]=id);return result;}
+export function power(t:Team){const rows=FORMATIONS[t.formation];const avg=(positions:string[])=>{const ps=t.lineup.map((id,i)=>id&&positions.includes(rows[i])?effectiveRating(byId(id),rows[i]):null).filter((x):x is number=>x!==null);return ps.reduce((a,b)=>a+b,0)/(ps.length||1);};return {attack:avg(['LW','RW','ST','AM']),mid:avg(['DM','CM','AM']),def:avg(['LB','RB','CB']),gk:avg(['GK']),all:avg(rows)};}
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const round=(v:number)=>Math.round(v*100)/100;
 const mean=(ps:Player[],key:keyof Attributes)=>ps.reduce((a,p)=>a+p.attributes[key],0)/Math.max(1,ps.length);
-function playersAt(t:Team,positions:string[]){return t.lineup.flatMap((id,i)=>id&&positions.includes(FORMATIONS[t.formation][i])?[byId(id)]:[]);}
+function playersAt(t:Team,positions:string[]){return t.lineup.flatMap((id,i)=>{const pos=FORMATIONS[t.formation][i];return id&&positions.includes(pos)?[adapted(byId(id),pos)]:[];});}
 const any=(ps:Player[],random:()=>number)=>ps[Math.floor(random()*ps.length)];
 function weighted<T>(items:T[],weights:number[],random:()=>number):T{let r=random()*weights.reduce((a,b)=>a+b,0);for(let i=0;i<items.length;i++){r-=weights[i];if(r<0)return items[i];}return items[items.length-1];}
 function midfield(t:Team){const ps=playersAt(t,['CM','DM','AM']);return mean(ps,'passing')*.65+mean(ps,'dribbling')*.25+mean(ps,'physical')*.1;}
@@ -48,7 +62,7 @@ export function review(s:State,r:Result,side:number):Review{
  return {advantages,weaknesses,reason,suggestion};
 }
 export function simulate(s:State,random=Math.random):Result{
- if(s.teams.length!==2||s.teams.some(t=>t.lineup.length!==11||t.lineup.some((id,i)=>!id||!byId(id)?.positions.includes(FORMATIONS[t.formation][i]))))throw Error('阵容未完整或位置不合法');
+ if(s.teams.length!==2||s.teams.some(t=>t.lineup.length!==11||t.lineup.some(id=>!id||!byId(id))))throw Error('阵容未完整或位置不合法');
  const score=[0,0],shots=[0,0],onTarget=[0,0],saves=[0,0],xg=[0,0],events:Event[]=[];
  const poss=clamp(50+(midfield(s.teams[0])-midfield(s.teams[1]))*.65+(s.teams[0].tactic==='控球组织'?5:0)-(s.teams[1].tactic==='控球组织'?5:0),33,67);
  for(let minute=3;minute<=90;minute+=3){
@@ -83,7 +97,7 @@ export function act(s:State,side:number,action:string,payload:any={},random=Math
  if(s.phase!=='draft'||s.turn!==side)throw Error('请等待你的选人回合');
  if(action==='draw'){if(s.nation)throw Error('本回合已经抽取国家');s.nation=draw(s,side,random);return;}
  if(action==='reroll'){if(!s.nation||t.rerolls<=0)throw Error('没有可用的重抽机会');s.nation=draw(s,side,random);if(s.previews)s.previews[side]=null;t.rerolls--;return;}
- if(action==='pick'){const p=available(s,side,s.nation||'NONE').find(p=>p.id===payload.id);const index=payload.slot;if(!p||!Number.isInteger(index)||index<0||index>10||t.lineup[index]||!p.positions.includes(FORMATIONS[t.formation][index]))throw Error('该球员无法放入这个位置，或已被选择');t.lineup[index]=p.id;if(s.previews)s.previews[side]=null;s.history.push({side,id:p.id});s.nation=null;if(s.teams.every(t=>t.lineup.every(Boolean)))s.phase='ready';else s.turn=1-side;return;}
+ if(action==='pick'){const p=available(s,side,s.nation||'NONE').find(p=>p.id===payload.id);const index=payload.slot;if(!p||!Number.isInteger(index)||index<0||index>10||t.lineup[index])throw Error('该球员无法放入这个位置，或已被选择');t.lineup[index]=p.id;if(s.previews)s.previews[side]=null;s.history.push({side,id:p.id});s.nation=null;if(s.teams.every(t=>t.lineup.every(Boolean)))s.phase='ready';else s.turn=1-side;return;}
  throw Error('未知操作');
 }
 
