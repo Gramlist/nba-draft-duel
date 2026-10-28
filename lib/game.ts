@@ -31,10 +31,17 @@ const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const round=(v:number)=>Math.round(v*100)/100;
 const mean=(ps:Player[],key:keyof Attributes)=>ps.reduce((a,p)=>a+p.attributes[key],0)/Math.max(1,ps.length);
 function playersAt(t:Team,positions:string[]){return t.lineup.flatMap((id,i)=>{const pos=FORMATIONS[t.formation][i];return id&&positions.includes(pos)?[adapted(byId(id),pos)]:[];});}
-const any=(ps:Player[],random:()=>number)=>ps[Math.floor(random()*ps.length)];
+const any=(ps:Player[],random:()=>number)=>{if(!ps.length)throw Error('比赛模拟找不到可用球员，请检查阵型配置');return ps[Math.min(ps.length-1,Math.floor(random()*ps.length))];};
+const unique=(...groups:Player[][])=>[...new Map(groups.flat().map(p=>[p.id,p])).values()];
+const fieldPlayers=(t:Team)=>playersAt(t,['ST','LW','RW','AM','LM','RM','CM','DM','LB','RB','LWB','RWB','LCB','CB','RCB']);
+const attackers=(t:Team)=>{const primary=playersAt(t,['ST','LW','RW','AM']);return primary.length?primary:playersAt(t,['LM','RM','CM','DM']);};
+const widePlayers=(t:Team)=>{const primary=playersAt(t,['LW','RW','LM','RM','LWB','RWB']);return primary.length?primary:attackers(t);};
+const backline=(t:Team)=>{const primary=playersAt(t,['CB','LCB','RCB','LB','RB','LWB','RWB']);return primary.length?primary:fieldPlayers(t);};
+const creatorsAt=(t:Team,source:Source)=>{const preferred=source==='传中争顶'||source==='边路突破'?playersAt(t,['LB','RB','LWB','RWB','LW','RW','LM','RM']):playersAt(t,['CM','DM','AM','LM','RM']);return preferred.length?preferred:fieldPlayers(t);};
+const defendersAt=(t:Team,source:Source)=>{const preferred=source==='边路突破'?playersAt(t,['LB','RB','LWB','RWB','LCB','RCB']):source==='中路配合'?playersAt(t,['CB','LCB','RCB','DM']):playersAt(t,['CB','LCB','RCB','LB','RB','LWB','RWB']);return preferred.length?preferred:backline(t);};
 function weighted<T>(items:T[],weights:number[],random:()=>number):T{let r=random()*weights.reduce((a,b)=>a+b,0);for(let i=0;i<items.length;i++){r-=weights[i];if(r<0)return items[i];}return items[items.length-1];}
 function midfield(t:Team){const ps=playersAt(t,['CM','DM','AM','LM','RM']);return mean(ps,'passing')*.65+mean(ps,'dribbling')*.25+mean(ps,'physical')*.1;}
-function profiles(t:Team){const m=playersAt(t,['CM','DM','AM','LM','RM']),d=playersAt(t,['CB','LCB','RCB','LB','RB','LWB','RWB']),w=playersAt(t,['LW','RW','LM','RM']),f=playersAt(t,['ST','LW','RW','AM','LM','RM']),g=playersAt(t,['GK']);const best=(ps:Player[],key:keyof Attributes)=>[...ps].sort((a,b)=>b.attributes[key]-a.attributes[key])[0];return [
+function profiles(t:Team){const m=playersAt(t,['CM','DM','AM','LM','RM']),d=backline(t),w=widePlayers(t),f=attackers(t),g=playersAt(t,['GK']);const best=(ps:Player[],key:keyof Attributes)=>[...ps].sort((a,b)=>b.attributes[key]-a.attributes[key])[0];return [
  {key:'passing',title:'组织',score:midfield(t),p:best(m,'passing'),detail:'中场传控为机会创造提供支援'},
  {key:'width',title:'边路',score:mean(w,'pace')*.45+mean(w,'dribbling')*.55,p:best(w,'dribbling'),detail:'边路速度与盘带能争取突破空间'},
  {key:'finish',title:'终结',score:mean(f,'finishing'),p:best(f,'finishing'),detail:'前场终结能力是把握机会的基础'},
@@ -70,14 +77,16 @@ export function simulate(s:State,random=Math.random):Result{
  for(let minute=3;minute<=90;minute+=3){
   const side=random()<poss/100?0:1,o=1-side,t=s.teams[side],opp=s.teams[o];
   const source=weighted<Source>(['中路配合','边路突破','传中争顶','快速反击'],t.tactic==='控球组织'?[5,3,2,1]:t.tactic==='快速反击'?[2,2,2,5]:[3,3,2,2],random);
-  const forwards=playersAt(t,['ST','LW','RW','AM']),wings=playersAt(t,['LW','RW']),mids=playersAt(t,['CM','DM','AM']);
-  const shooter=any(source==='传中争顶'?playersAt(t,['ST']):source==='边路突破'?wings:forwards,random);
-  const creators=source==='传中争顶'||source==='边路突破'?playersAt(t,['LB','RB','LW','RW']):mids;
+  const forwards=attackers(t),wings=widePlayers(t);
+  const strikers=playersAt(t,['ST']);
+  const shooters=source==='传中争顶'&&strikers.length?strikers:source==='边路突破'?wings:forwards;
+  const shooter=any(shooters,random);
+  const creators=creatorsAt(t,source);
   const others=creators.filter(p=>p.id!==shooter.id),creator=any(others.length?others:creators,random);
-  const defender=any(playersAt(opp,source==='边路突破'?['LB','RB']:source==='中路配合'?['CB','DM']:['CB']),random),keeper=playersAt(opp,['GK'])[0];
+  const defender=any(defendersAt(opp,source),random),keeper=playersAt(opp,['GK'])[0];
   const a=shooter.attributes,c=creator.attributes,d=defender.attributes;
   const attackValue=source==='传中争顶'?c.passing*.45+a.aerial*.4+a.physical*.15:source==='快速反击'?a.pace*.45+c.passing*.35+a.dribbling*.2:source==='边路突破'?a.dribbling*.45+a.pace*.3+c.passing*.25:c.passing*.5+a.dribbling*.35+a.physical*.15;
-  const defenseValue=source==='传中争顶'?d.aerial*.5+d.defending*.3+d.physical*.2:source==='快速反击'?d.pace*.45+d.defending*.4+d.physical*.15:source==='边路突破'?d.defending*.45+d.pace*.35+d.physical*.2:d.defending*.6+d.physical*.25+mean(playersAt(opp,['CM','DM','AM']),'defending')*.15;
+  const defenseValue=source==='传中争顶'?d.aerial*.5+d.defending*.3+d.physical*.2:source==='快速反击'?d.pace*.45+d.defending*.4+d.physical*.15:source==='边路突破'?d.defending*.45+d.pace*.35+d.physical*.2:d.defending*.6+d.physical*.25+mean(playersAt(opp,['CM','DM','AM','LM','RM']),'defending')*.15;
   const counterBonus=source==='快速反击'&&t.tactic==='快速反击'&&opp.tactic==='控球组织'?.06:0;
   const creationProbability=clamp(.66+(attackValue-defenseValue)*.008+counterBonus,.25,.9);
   const onTargetProbability=clamp(.44+(a.finishing-80)*.011+(attackValue-defenseValue)*.003,.2,.78);
