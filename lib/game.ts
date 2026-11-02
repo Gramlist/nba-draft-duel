@@ -23,7 +23,7 @@ function adapted(p:Player,position:string):Player{
  const penalty=positionPenalty(p,position),factor=1-penalty/100;
  return {...p,rating:effectiveRating(p,position),attributes:Object.fromEntries(Object.entries(p.attributes).map(([k,v])=>[k,k==='saving'&&position!=='GK'?Math.max(5,v*.25):Math.round(v*factor)])) as Attributes};
 }
-export function available(s:State,side:number,nation?:string){const t=s.teams[side];const used=new Set(s.teams.flatMap(t=>t.lineup));return PLAYERS.filter(p=>(!nation||p.nation===nation||p.nation==='IT')&&!used.has(p.id)&&FORMATIONS[t.formation].some((_,i)=>!t.lineup[i]));}
+export function available(s:State,side:number,nation?:string){const t=s.teams[side];const used=new Set(s.teams.flatMap(t=>t.lineup));return PLAYERS.filter(p=>(!nation||p.nation===nation)&&!used.has(p.id)&&FORMATIONS[t.formation].some((_,i)=>!t.lineup[i]));}
 export function draw(s:State,side:number,random=Math.random){let pool=NATIONS.filter(n=>available(s,side,n.id).length&&n.id!==s.nation);if(!pool.length)pool=NATIONS.filter(n=>available(s,side,n.id).length);if(!pool.length)throw Error('没有可用球员，请调整阵型');return pool[Math.floor(random()*pool.length)].id;}
 export function reassign(ids:string[],formation:string):(string|null)[]|null {if(!FORMATIONS[formation])return null;const result:(string|null)[]=Array(11).fill(null);ids.slice(0,11).forEach((id,i)=>result[i]=id);return result;}
 export function power(t:Team){const rows=FORMATIONS[t.formation];const avg=(positions:string[])=>{const ps=t.lineup.map((id,i)=>id&&positions.includes(rows[i])?effectiveRating(byId(id),rows[i]):null).filter((x):x is number=>x!==null);return ps.reduce((a,b)=>a+b,0)/(ps.length||1);};return {attack:avg(['LW','RW','ST','AM','LM','RM']),mid:avg(['DM','CM','AM','LM','RM']),def:avg(['LB','RB','LWB','RWB','LCB','CB','RCB']),gk:avg(['GK']),all:avg(rows)};}
@@ -118,8 +118,8 @@ export function resolveTyped(s:State,side:number,input:string):Player {
  if(s.phase!=='draft'||s.turn!==side||!s.nation)throw Error('请在自己的回合先抽取国家');
  const key=normalizeName(input.trim());if(!key)throw Error('请先输入球员姓名');
  const matches=PLAYERS.filter(p=>{const words=p.aliases.split(/\s+/);const end=words.findIndex(w=>!/^[A-Za-zÀ-ž0-9.'-]+$/.test(w));const english=words.slice(0,end<0?words.length:end).join(' ');const aliases=[p.name,english,...words];return aliases.some(a=>normalizeName(a)===key)});
- const nationals=matches.filter(p=>p.nation===s.nation||p.nation==='IT');
- if(!nationals.length)throw Error('该姓名未匹配到抽中国家的已收录球员或意大利球员，请检查姓名或常用别名');
+ const nationals=matches.filter(p=>p.nation===s.nation);
+ if(!nationals.length)throw Error('该姓名未匹配到抽中国家的已收录球员，请检查姓名或常用别名');
  if(nationals.length>1)throw Error('姓名不够明确，请输入完整姓名');
  const p=nationals[0];if(s.teams.some(t=>t.lineup.includes(p.id)))throw Error('这名球员已被选走，请输入另一位球员');
  if(!available(s,side,s.nation).some(x=>x.id===p.id))throw Error('这名球员无法适配你的空缺位置，请调整阵型或输入另一位球员');
