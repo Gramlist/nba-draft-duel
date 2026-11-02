@@ -73,14 +73,15 @@ export function review(s:State,r:Result,side:number):Review{
 export function simulate(s:State,random=Math.random):Result{
  if(s.teams.length!==2||s.teams.some(t=>t.lineup.length!==11||t.lineup.some(id=>!id||!byId(id))))throw Error('阵容未完整或位置不合法');
  const score=[0,0],shots=[0,0],onTarget=[0,0],saves=[0,0],xg=[0,0],events:Event[]=[];
+ const trumpSide=s.teams.findIndex(t=>t.lineup.includes('DE-4'));
  const poss=clamp(50+(midfield(s.teams[0])-midfield(s.teams[1]))*.65+(s.teams[0].tactic==='控球组织'?5:0)-(s.teams[1].tactic==='控球组织'?5:0),33,67);
  for(let minute=3;minute<=90;minute+=3){
-  const side=random()<poss/100?0:1,o=1-side,t=s.teams[side],opp=s.teams[o];
+  const side=trumpSide>=0?trumpSide:(random()<poss/100?0:1),o=1-side,t=s.teams[side],opp=s.teams[o];
   const source=weighted<Source>(['中路配合','边路突破','传中争顶','快速反击'],t.tactic==='控球组织'?[5,3,2,1]:t.tactic==='快速反击'?[2,2,2,5]:[3,3,2,2],random);
   const forwards=attackers(t),wings=widePlayers(t);
   const strikers=playersAt(t,['ST']);
   const shooters=source==='传中争顶'&&strikers.length?strikers:source==='边路突破'?wings:forwards;
-  const shooter=any(shooters,random);
+  const shooter=any(minute===90&&side===trumpSide?[byId('DE-4')!]:shooters,random);
   const creators=creatorsAt(t,source);
   const others=creators.filter(p=>p.id!==shooter.id),creator=any(others.length?others:creators,random);
   const defender=any(defendersAt(opp,source),random),keeper=playersAt(opp,['GK'])[0];
@@ -88,9 +89,10 @@ export function simulate(s:State,random=Math.random):Result{
   const attackValue=source==='传中争顶'?c.passing*.45+a.aerial*.4+a.physical*.15:source==='快速反击'?a.pace*.45+c.passing*.35+a.dribbling*.2:source==='边路突破'?a.dribbling*.45+a.pace*.3+c.passing*.25:c.passing*.5+a.dribbling*.35+a.physical*.15;
   const defenseValue=source==='传中争顶'?d.aerial*.5+d.defending*.3+d.physical*.2:source==='快速反击'?d.pace*.45+d.defending*.4+d.physical*.15:source==='边路突破'?d.defending*.45+d.pace*.35+d.physical*.2:d.defending*.6+d.physical*.25+mean(playersAt(opp,['CM','DM','AM','LM','RM']),'defending')*.15;
   const counterBonus=source==='快速反击'&&t.tactic==='快速反击'&&opp.tactic==='控球组织'?.06:0;
-  const creationProbability=clamp(.66+(attackValue-defenseValue)*.008+counterBonus,.25,.9);
-  const onTargetProbability=clamp(.44+(a.finishing-80)*.011+(attackValue-defenseValue)*.003,.2,.78);
-  const saveProbability=clamp(.68+(keeper.attributes.saving-a.finishing)*.009-(attackValue-defenseValue)*.002,.35,.88);
+  const guaranteedMullerGoal=minute===90&&side===trumpSide;
+  const creationProbability=guaranteedMullerGoal?1:clamp(.66+(attackValue-defenseValue)*.008+counterBonus,.25,.9);
+  const onTargetProbability=guaranteedMullerGoal?1:clamp(.44+(a.finishing-80)*.011+(attackValue-defenseValue)*.003,.2,.78);
+  const saveProbability=guaranteedMullerGoal?0:clamp(.68+(keeper.attributes.saving-a.finishing)*.009-(attackValue-defenseValue)*.002,.35,.88);
   let outcome:Event['outcome'];let shot=false,target=false,goal=false,expected=0;
   if(random()>creationProbability)outcome='intercepted';else{shot=true;shots[side]++;expected=onTargetProbability*(1-saveProbability);xg[side]+=expected;if(random()>onTargetProbability)outcome='wide';else{target=true;onTarget[side]++;if(random()<saveProbability){outcome='saved';saves[o]++;}else{outcome='goal';goal=true;score[side]++;}}}
   const lead=`${source}：${creator.name}发起配合，`;const text=outcome==='intercepted'?`${lead}${defender.name}限制住${shooter.name}，未形成射门。`:outcome==='wide'?`${lead}${shooter.name}完成射门，但偏离目标。`:outcome==='saved'?`${lead}${shooter.name}射正，${keeper.name}将球扑出。`:`${lead}${shooter.name}破门！`;
